@@ -1,8 +1,7 @@
 // Learn more at developers.reddit.com/docs
-import { Devvit, useState } from "@devvit/public-api";
+import { Context, Devvit, RedisClient, useState } from "@devvit/public-api";
 import { Board, Chessboard, Position } from "./components/chessboard.js";
 import { getMoveString, initBoard, Move } from "./lib/game.js";
-import { VoteSummary } from "./components/VoteSummary.js";
 
 Devvit.configure({
   redis: true,
@@ -35,12 +34,13 @@ Devvit.addMenuItem({
   },
 });
 
+function getKey(postId: string | undefined): string {
+  return `kasparov_:${postId}`;
+}
+
 const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
-  const key = (postId: string | undefined): string => {
-    return `kasparov_:${postId}`;
-  };
   // const [voteData, setVoteData] = useState(async () => {
-  //   const state = await redis.get(key(postId));
+  //   const state = await redis.get(getKey(postId));
   //   console.log("vote data: ", state);
   //   return null;
   // });
@@ -55,7 +55,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     const moveString = getMoveString({ from: curSelectedPos, to: newPos });
 
     setMove(moveString);
-    await redis.hIncrBy(key(postId), moveString, 1);
+    await redis.hIncrBy(getKey(postId), moveString, 1);
     console.log("handled move successfully");
   };
 
@@ -79,16 +79,104 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
   return (
     <vstack height="100%" width="100%" gap="medium" alignment="center middle">
-      {/* <Chessboard */}
-      {/* //   board={board}
-      //   curSelectedPos={curSelectedPos}
-      //   handleSelectPos={setCurSelectedPos}
-      //   handleMove={handleMove}
-      // /> */}
-      <VoteSummary moves={mockMoves} currentBoard={board} />
+      <Chessboard
+        board={board}
+        curSelectedPos={curSelectedPos}
+        handleSelectPos={setCurSelectedPos}
+        handleMove={handleMove}
+      />
+      {/* <VoteSummary moves={mockMoves} currentBoard={board} /> */}
     </vstack>
   );
 };
+
+const UPDATE_BOARD_JOB = "updateBoard";
+const DAILY_POST = "dailyPost";
+
+Devvit.addSchedulerJob({
+  name: DAILY_POST,
+  onRun: async (event, context) => {
+    const newBoard = initBoard();
+    const postId = context.postId;
+    const redis = context.redis;
+
+    await redis.set(getKey(postId), JSON.stringify(newBoard));
+  },
+});
+
+// TODO: Add api call
+function getBoardAfterEngineTurn(board: Board): Board {
+  return board;
+}
+
+async function getBoardForPost(
+  postId: string,
+  redis: RedisClient
+): Promise<Board | undefined> {
+  const board = await redis.get(getKey(postId));
+  if (board) {
+    return JSON.parse(board);
+  } else {
+    return undefined;
+  }
+}
+
+Devvit.addSchedulerJob({
+  name: UPDATE_BOARD_JOB,
+  onRun: async (event, context) => {
+    const { redis, postId } = context;
+
+    if (!postId) {
+      console.log("no post id");
+      return;
+    }
+
+    const curBoard = await getBoardForPost(postId, context.redis);
+
+    if (!curBoard) {
+      console.log("no board found");
+      return;
+    }
+
+    const newBoard = getBoardAfterEngineTurn(curBoard);
+
+    await redis.set(getKey(postId), JSON.stringify(newBoard));
+  },
+});
+
+Devvit.addTrigger({
+  event: "AppInstall",
+  onEvent: async (_, context) => {
+    try {
+      const jobId = await context.scheduler.runJob({
+        cron: "0 12 * * *",
+        name: DAILY_POST,
+        data: {},
+      });
+      await context.redis.set("dailyPostJobId", jobId); // in case want to cancel
+    } catch (e) {
+      console.log("error was not able to schedule:", e);
+      throw e;
+    }
+  },
+});
+
+Devvit.addTrigger({
+  event: "PostCreate",
+  onEvent: async (_, context) => {
+    try {
+      const jobId = await context.scheduler.runJob({
+        cron: "0 12 * * *",
+        name: UPDATE_BOARD_JOB,
+        data: {},
+      });
+      await context.redis.set("upateBoardJobId", jobId); // in case want to cancel
+    } catch (e) {
+      console.log("error was not able to schedule:", e);
+      throw e;
+    }
+  },
+});
 
 // Add a post type definition
 Devvit.addCustomPostType({
