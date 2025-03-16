@@ -164,6 +164,12 @@ Devvit.addTrigger({
 Devvit.addTrigger({
   event: "PostCreate",
   onEvent: async (_, context) => {
+    const userId = context.userId;
+    if (userId !== "kasparov-app") {
+      console.log("user is not kasparov. Actual user: ", userId);
+      return;
+    }
+
     try {
       const jobId = await context.scheduler.runJob({
         cron: "0 12 * * *",
