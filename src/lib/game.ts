@@ -1,5 +1,16 @@
 import { Board, Piece, Position } from "../components/chessboard.js";
 
+export interface Move {
+  from: Position;
+  to: Position;
+}
+
+export function getMoveString(move: Move): string {
+  const [fromRow, fromCol] = move.from;
+  const [toRow, toCol] = move.to;
+  return `${fromCol}${fromRow}-${toCol}${toRow}`;
+}
+
 export function initBoard(): Board {
   const board: (Piece | null)[][] = Array(8)
     .fill(null)
@@ -108,7 +119,6 @@ function getValidPawnMoves(board: Board, selectedPos: Position): Position[] {
       const piece = board[row][col];
       return piece == null;
     });
-  console.log("valid moves: ", validMoves);
 
   return validMoves;
 }

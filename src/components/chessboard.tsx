@@ -45,13 +45,15 @@ export type Board = (Piece | null)[][];
 interface ChessboardProps {
   board: Board;
   curSelectedPos: Position | null;
-  setCurSelectedPos: (pos: Position | null) => void;
+  handleSelectPos: (pos: Position | null) => void;
+  handleMove: (pos: Position | null) => void;
 }
 
 export const Chessboard = ({
   board,
   curSelectedPos,
-  setCurSelectedPos,
+  handleSelectPos,
+  handleMove,
 }: ChessboardProps): JSX.Element => {
   const rows = 8;
   const cols = 8;
@@ -78,7 +80,7 @@ export const Chessboard = ({
                     alignment="center middle"
                     onPress={
                       piece
-                        ? () => setCurSelectedPos([rowIndex, colIndex])
+                        ? () => handleSelectPos([rowIndex, colIndex])
                         : undefined
                     }
                   >
@@ -112,6 +114,7 @@ export const Chessboard = ({
                           cornerRadius="full"
                           backgroundColor="#00FF00"
                           alignment="center middle"
+                          onPress={() => handleMove([rowIndex, colIndex])}
                         />
                       )}
                   </vstack>
