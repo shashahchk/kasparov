@@ -16,6 +16,15 @@ const CHESS_PIECE_ICONS = {
   "w-king": "♔",
 };
 
+const CHESS_PIECE_URLS = {
+  "b-rook": "https://i.redd.it/ktvw42mag5wd1.png",
+  "b-bishop": "https://i.redd.it/kldf1a5ag5wd1.png",
+  "b-queen": "https://i.redd.it/wa8mkrbag5wd1.png",
+  "b-king": "https://i.redd.it/4usdcobag5wd1.png",
+  "w-bishop": "https://i.redd.it/q3awlbnag5wd1.png",
+
+
+}
 export type Position = [number, number];
 
 export type Piece =
