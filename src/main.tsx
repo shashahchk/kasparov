@@ -1,6 +1,6 @@
 // Learn more at developers.reddit.com/docs
 import { Devvit, useState } from "@devvit/public-api";
-import { Board, Chessboard, Piece } from "./components/chessboard.js";
+import { Board, Chessboard, Position } from "./components/chessboard.js";
 import { initBoard } from "./lib/game.js";
 
 Devvit.configure({
@@ -39,11 +39,17 @@ Devvit.addCustomPostType({
   height: "regular",
   render: (_context) => {
     const [board, setBoard] = useState<Board>(initBoard());
+    const [curSelectedPos, setCurSelectedPos] = useState<Position | null>(null);
 
+    console.log("rendering main ");
     return (
       // <div>something</div>
       <vstack height="100%" width="100%" gap="medium" alignment="center middle">
-        <Chessboard board={board} />
+        <Chessboard
+          board={board}
+          curSelectedPos={curSelectedPos}
+          setCurSelectedPos={setCurSelectedPos}
+        />
       </vstack>
     );
   },

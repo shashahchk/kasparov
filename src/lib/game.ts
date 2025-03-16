@@ -1,4 +1,4 @@
-import { Board, Piece } from "../components/chessboard.js";
+import { Board, Piece, Position } from "../components/chessboard.js";
 
 export function initBoard(): Board {
   const board: (Piece | null)[][] = Array(8)
@@ -50,4 +50,149 @@ export function initBoard(): Board {
   });
 
   return board;
+}
+
+export function getValidMoves(board: Board, selectedPos: Position): Position[] {
+  const piece = board[selectedPos[0]][selectedPos[1]];
+  if (piece == null) return [];
+
+  const [_, pieceType] = piece.split("-");
+  switch (pieceType) {
+    case "pawn":
+      return getValidPawnMoves(board, selectedPos);
+    case "rook":
+      return getValidRookMoves(board, selectedPos);
+    case "bishop":
+      return getValidBishopMoves(board, selectedPos);
+    case "knight":
+      return getValidKnightMoves(board, selectedPos);
+    case "queen":
+      return getValidQueenMoves(board, selectedPos);
+    case "king":
+      return getValidKingMoves(board, selectedPos);
+    default:
+      return [];
+  }
+}
+
+function getValidKnightMoves(board: Board, selectedPos: Position): Position[] {
+  const moves = [
+    [2, 1],
+    [2, -1],
+    [-2, 1],
+    [-2, -1],
+    [1, 2],
+    [1, -2],
+    [-1, 2],
+    [-1, -2],
+  ];
+
+  const validMoves: Position[] = moves
+    .map(([row, col]): Position => [selectedPos[0] + row, selectedPos[1] + col])
+    .filter(([row, col]) => row >= 0 && row < 8 && col >= 0 && col < 8)
+    .filter(([row, col]) => {
+      const piece = board[row][col];
+      return piece == null;
+    });
+
+  return validMoves;
+}
+
+function getValidPawnMoves(board: Board, selectedPos: Position): Position[] {
+  const moves = [[-1, 0]];
+
+  const validMoves = moves
+    .map(([row, col]): Position => [selectedPos[0] + row, selectedPos[1] + col])
+    .filter(([row, col]) => row >= 0 && row < 8 && col >= 0 && col < 8)
+    .filter(([row, col]) => {
+      const piece = board[row][col];
+      return piece == null;
+    });
+  console.log("valid moves: ", validMoves);
+
+  return validMoves;
+}
+
+function getValidKingMoves(board: Board, selectedPos: Position): Position[] {
+  const moves = [
+    [1, 1],
+    [1, 0],
+    [1, -1],
+    [0, 1],
+    [0, -1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1],
+  ];
+
+  const validMoves: Position[] = moves
+    .map(([row, col]): Position => [selectedPos[0] + row, selectedPos[1] + col])
+    .filter(([row, col]) => row >= 0 && row < 8 && col >= 0 && col < 8)
+    .filter(([row, col]) => {
+      const piece = board[row][col];
+      return piece == null;
+    });
+
+  return validMoves;
+}
+
+function getValidRookMoves(board: Board, selectedPos: Position): Position[] {
+  const moves = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+
+  const validMoves: Position[] = moves
+    .map(([row, col]): Position => [selectedPos[0] + row, selectedPos[1] + col])
+    .filter(([row, col]) => row >= 0 && row < 8 && col >= 0 && col < 8)
+    .filter(([row, col]) => {
+      const piece = board[row][col];
+      return piece == null;
+    });
+
+  return validMoves;
+}
+
+function getValidBishopMoves(board: Board, selectedPos: Position): Position[] {
+  const moves = [
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ];
+
+  const validMoves: Position[] = moves
+    .map(([row, col]): Position => [selectedPos[0] + row, selectedPos[1] + col])
+    .filter(([row, col]) => row >= 0 && row < 8 && col >= 0 && col < 8)
+    .filter(([row, col]) => {
+      const piece = board[row][col];
+      return piece == null;
+    });
+
+  return validMoves;
+}
+
+function getValidQueenMoves(board: Board, selectedPos: Position): Position[] {
+  const moves = [
+    [1, 1],
+    [1, 0],
+    [1, -1],
+    [0, 1],
+    [0, -1],
+    [-1, 1],
+    [-1, 0],
+    [-1, -1],
+  ];
+
+  const validMoves: Position[] = moves
+    .map(([row, col]): Position => [selectedPos[0] + row, selectedPos[1] + col])
+    .filter(([row, col]) => row >= 0 && row < 8 && col >= 0 && col < 8)
+    .filter(([row, col]) => {
+      const piece = board[row][col];
+      return piece == null;
+    });
+
+  return validMoves;
 }
