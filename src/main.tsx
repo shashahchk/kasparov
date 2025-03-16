@@ -1,6 +1,7 @@
 // Learn more at developers.reddit.com/docs
 import { Devvit, useState } from "@devvit/public-api";
-import { Chessboard } from "./components/chessboard.js";
+import { Board, Chessboard, Piece } from "./components/chessboard.js";
+import { initBoard } from "./lib/game.js";
 
 Devvit.configure({
   redditAPI: true,
@@ -37,18 +38,12 @@ Devvit.addCustomPostType({
   name: "Experience Post",
   height: "regular",
   render: (_context) => {
-    const [counter, setCounter] = useState(0);
+    const [board, setBoard] = useState<Board>(initBoard());
 
     return (
+      // <div>something</div>
       <vstack height="100%" width="100%" gap="medium" alignment="center middle">
-          <Chessboard />
-        {/* <text size="large">{`Click counter: ${counter}`}</text>
-        <button
-          appearance="primary"
-          onPress={() => setCounter((counter) => counter + 1)}
-        >
-          Click me again
-        </button> */}
+        <Chessboard board={board} />
       </vstack>
     );
   },
