@@ -5,9 +5,24 @@ import {
   RedisClient,
   useInterval,
   useState,
+  useAsync,
 } from "@devvit/public-api";
 import { Board, Chessboard, Position } from "./components/chessboard.js";
-import { getMoveString, initBoard, Move } from "./lib/game.js";
+import {
+  PGN,
+  getMoveString,
+  initBoard,
+  Move,
+  getValidMoves,
+} from "./lib/game.js";
+import { Chess } from "chess.js";
+import { Game, move, status, moves, aiMove, getFen } from "js-chess-engine";
+
+// const gameClient = chess.create();
+
+// let aiMove = game.aiMove();
+
+// console.log(aiMove);
 
 Devvit.configure({
   redis: true,
@@ -44,46 +59,63 @@ function getKey(postId: string | undefined): string {
   return `kasparov_:${postId}`;
 }
 
-const mockMoves = {
-  "a1-a2": 10,
-  "a1-a3": 5,
-  "b1-b2": 3,
-  "b1-b3": 1,
-  "c1-c2": 2,
-  "c1-c3": 1,
-  "d1-d2": 1,
-  "d1-d3": 1,
-  "e1-e2": 1,
-  "e1-e3": 1,
-  "f1-f2": 1,
-  "f1-f3": 1,
-  "g1-g2": 1,
-  "g1-g3": 1,
-  "h1-h2": 1,
-}; // TODO: Parse from loaded redis state
-
 const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
-  // const [voteData, setVoteData] = useState(async () => {
-  //   const state = await redis.get(getKey(postId));
-  //   console.log("vote data: ", state);
-  //   return null;
-  // });
-  const [board, setBoard] = useState<Board>(initBoard());
-  const [curSelectedPos, setCurSelectedPos] = useState<Position | null>(null);
+  const getMoveTable = async () => {
+    let moves = await redis.hGetAll(getKey(postId));
+    // return map with values casted to integers
+    return Object.fromEntries(
+      Object.entries(moves).map(([key, value]) => [key, parseInt(value)])
+    );
+  };
+
+  const [voteTable, setVoteTable] = useState<Record<string, number>>(async () =>
+    getMoveTable()
+  );
+
+  const [game, setGame] = useState<PGN>(initBoard());
+  const [curSelectedPos, setCurSelectedPos] = useState<string | null>(null);
   const [move, setMove] = useState<string | null>(null);
+  const [validMoves, setValidMoves] = useState<string[]>([]);
+
+  // Add state for tracking the last voted move and showing confirmation
+  const [lastVotedMove, setLastVotedMove] = useState<string | null>(null);
+  const [showVoteConfirmation, setShowVoteConfirmation] =
+    useState<boolean>(false);
+
   const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [moveIndex, setMoveIndex] = useState<number>(15);
 
-  // Mock timer countdown
-  useInterval(() => {
-    setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
-  }, 1000);
+  const gameObject = new Chess();
+  let isLoaded = gameObject.loadPgn(game);
 
-  const handleMove = async (newPos: Position | null) => {
+  let timer =
+    // Mock timer countdown
+    useInterval(() => {
+      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+  timer.start();
+
+  const handleMove = async (newPos: string | null) => {
     if (curSelectedPos == null || newPos == null) return;
     const moveString = getMoveString({ from: curSelectedPos, to: newPos });
     setMove(moveString);
     await redis.hIncrBy(getKey(postId), moveString, 1);
     setCurSelectedPos(null);
+    setValidMoves([]);
+    setVoteTable({
+      ...voteTable,
+      [moveString]: voteTable[moveString] ? voteTable[moveString] + 1 : 1,
+    });
+
+    // Set the last voted move and show confirmation
+    setLastVotedMove(moveString);
+    setShowVoteConfirmation(true);
+
+    // Hide confirmation after 3 seconds
+    setTimeout(() => {
+      setShowVoteConfirmation(false);
+    }, 3000);
   };
 
   const formatTime = (seconds: number): string => {
@@ -95,15 +127,30 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   return (
     <vstack padding="medium" width="100%" height="100%">
       <text alignment="center middle">Kasparov vs Redditors</text>
+
       <hstack grow gap="medium" alignment="middle center">
         {/* Game Area - Using fixed widths for predictable layout */}
         <hstack alignment="middle center" gap="medium">
           <vstack padding="medium" grow alignment="middle center">
             <Chessboard
-              board={board}
+              game={gameObject}
               curSelectedPos={curSelectedPos}
-              handleSelectPos={setCurSelectedPos}
+              handleSelectPos={(pos) => {
+                console.log(pos);
+                setCurSelectedPos(pos);
+                if (pos) {
+                  setValidMoves(getValidMoves(gameObject, pos));
+                } else {
+                  setValidMoves([]);
+                }
+              }}
               handleMove={handleMove}
+              validMoves={validMoves}
+              currentMoveIndex={moveIndex}
+              totalMoves={gameObject.history().length}
+              onNavigate={(moveIndex) => {
+                setMoveIndex(moveIndex);
+              }}
             />
           </vstack>
 
@@ -119,10 +166,47 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             <text size="small" color="#888888">
               Vote for the next move!
             </text>
+
+            {/* Vote confirmation message - Integrated into side panel */}
+            {showVoteConfirmation && (
+              <vstack
+                backgroundColor="rgba(0, 255, 0, 0.1)"
+                cornerRadius="medium"
+                padding="medium"
+                width="100%"
+                alignment="middle center"
+                gap="small"
+              >
+                <text color="#00FF00" weight="bold">
+                  Vote submitted!
+                </text>
+                <text color="white">{lastVotedMove}</text>
+              </vstack>
+            )}
+
             <text weight="bold" color="white">
               Top Voted Moves
             </text>
-            {Object.entries(mockMoves)
+
+            {/* Display last voted move if exists and confirmation is not showing */}
+            {lastVotedMove && !showVoteConfirmation && (
+              <vstack
+                backgroundColor="#FF45001A"
+                cornerRadius="small"
+                padding="small"
+                width="100%"
+                gap="small"
+              >
+                <text size="small" color="#888888">
+                  Your vote:
+                </text>
+                <text color="white" weight="bold">
+                  {lastVotedMove}
+                </text>
+              </vstack>
+            )}
+
+            {Object.entries(voteTable)
               .sort(([_, a], [__, b]) => b - a)
               .slice(0, 5)
               .map(([move, votes], index) => (
@@ -227,6 +311,7 @@ Devvit.addTrigger({
     }
   },
 });
+
 Devvit.addTrigger({
   event: "PostCreate",
   onEvent: async (_, context) => {
