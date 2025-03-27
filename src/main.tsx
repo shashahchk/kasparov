@@ -122,11 +122,22 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [showVoteConfirmation, setShowVoteConfirmation] =
     useState<boolean>(false);
 
-  const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
-  const [moveIndex, setMoveIndex] = useState<number>(0);
+  // Add state to track the from and to positions of the last voted move
+  const [votedFromSquare, setVotedFromSquare] = useState<string | null>(null);
+  const [votedToSquare, setVotedToSquare] = useState<string | null>(null);
 
+  const [timeLeft, setTimeLeft] = useState<number>(60); // 5 minutes in seconds
+  const [moveIndex, setMoveIndex] = useState<number>(0);
+  const [subredditName, setSubredditName] = useState<string>(
+    async () => await reddit.getCurrentSubredditName()
+  );
+
+  // Fetch subreddit name
   const gameObject = new Chess();
   let isLoaded = gameObject.loadPgn(game);
+
+  // Get move history to display in sidebar
+  const moveHistory = gameObject.history({ verbose: true });
 
   let timer =
     // Mock timer countdown
@@ -150,6 +161,9 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
     // Set the last voted move and show confirmation
     setLastVotedMove(moveString);
+    // Store the from and to positions for highlighting
+    setVotedFromSquare(curSelectedPos);
+    setVotedToSquare(newPos);
     setShowVoteConfirmation(true);
 
     // Hide confirmation after 3 seconds
@@ -164,118 +178,255 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  return (
-    <vstack padding="medium" width="100%" height="100%">
-      <text alignment="center middle">Kasparov vs Redditors</text>
+  // Move history sidebar component - improved design
+  const MoveHistorySidebar = () => {
+    return (
+      <vstack
+        backgroundColor="#252526"
+        width="150px"
+        height="100%"
+        padding="none"
+      >
+        <vstack
+          backgroundColor="#3C3C3D"
+          padding="small"
+          width="100%"
+          alignment="middle center"
+        >
+          <text size="small" weight="bold" color="white" alignment="center">
+            Move History
+          </text>
+        </vstack>
 
-      <hstack grow gap="medium" alignment="middle center">
-        {/* Game Area - Using fixed widths for predictable layout */}
-        <hstack alignment="middle center" gap="medium">
-          <vstack padding="medium" grow alignment="middle center">
-            <Chessboard
-              game={gameObject}
-              curSelectedPos={curSelectedPos}
-              handleSelectPos={(pos) => {
-                console.log(pos);
-                setCurSelectedPos(pos);
-                if (pos) {
-                  setValidMoves(getValidMoves(gameObject, pos));
-                } else {
-                  setValidMoves([]);
-                }
-              }}
-              handleMove={handleMove}
-              validMoves={validMoves}
-              currentMoveIndex={moveIndex}
-              totalMoves={gameObject.history().length}
-              onNavigate={(moveIndex) => {
-                setMoveIndex(moveIndex);
-              }}
-            />
+        <vstack gap="xsmall" padding="small" height="100%">
+          {moveHistory.length === 0 ? (
+            <text color="#A0A0A0" alignment="center" size="xsmall">
+              No moves yet
+            </text>
+          ) : (
+            moveHistory.map((move, index) => {
+              const isBot = index % 2 === 1; // Odd moves are bot moves
+              const moveNumber = Math.floor(index / 2) + 1;
+              const moveNotation = `${move.from}-${move.to}`;
+
+              return (
+                <vstack
+                  key={`move-${index}`}
+                  backgroundColor={
+                    index === moveIndex ? "rgba(255, 99, 71, 0.2)" : undefined
+                  }
+                  cornerRadius="small"
+                  padding="small"
+                  onPress={() => setMoveIndex(index)}
+                >
+                  <text size="xsmall" color={isBot ? "#FF9966" : "#88CCFF"}>
+                    {moveNumber}. {isBot ? "Bot" : `r/${subredditName}`}
+                  </text>
+                  <text
+                    size="xsmall"
+                    color="white"
+                    weight={index === moveIndex ? "bold" : "regular"}
+                  >
+                    {moveNotation}
+                  </text>
+                </vstack>
+              );
+            })
+          )}
+        </vstack>
+      </vstack>
+    );
+  };
+
+  // Right sidebar for timer and voting - enhanced design
+  const VotingSidebar = () => {
+    return (
+      <vstack
+        backgroundColor="#252526"
+        width="180px"
+        height="100%"
+        padding="none"
+      >
+        <vstack
+          backgroundColor="#3C3C3D"
+          padding="small"
+          width="100%"
+          alignment="middle center"
+        >
+          <text size="small" weight="bold" color="white" alignment="center">
+            Vote to Play
+          </text>
+        </vstack>
+
+        <vstack padding="small" gap="medium" width="100%">
+          {/* Timer */}
+          <vstack
+            backgroundColor={
+              timeLeft < 60 ? "rgba(255, 99, 71, 0.15)" : "#333334"
+            }
+            cornerRadius="medium"
+            padding="small"
+            alignment="middle center"
+            width="100%"
+            border="thin"
+            borderColor={timeLeft < 60 ? "rgba(255, 99, 71, 0.5)" : "#444444"}
+          >
+            <text size="small" color="#A0A0A0">
+              Next Move In
+            </text>
+            <text
+              size="large"
+              weight="bold"
+              color={timeLeft < 60 ? "#FF6347" : "white"}
+            >
+              {formatTime(timeLeft)}
+            </text>
           </vstack>
 
-          {/* Right Info Panel - Fixed width */}
-          <vstack
-            backgroundColor="#1A1A1B"
-            cornerRadius="medium"
-            padding="medium"
-            width="200px"
-            gap="small"
-          >
-            {/* Header */}
-            <text size="small" color="#888888">
-              Vote for the next move!
+          {/* Voting Section */}
+          <vstack width="100%" gap="small">
+            <text size="small" weight="bold" color="#88CCFF">
+              Vote for the next move
             </text>
 
-            {/* Vote confirmation message - Integrated into side panel */}
+            {/* Vote confirmation message */}
             {showVoteConfirmation && lastVotedMove && (
               <vstack
-                backgroundColor="rgba(0, 255, 0, 0.1)"
+                backgroundColor="rgba(50, 205, 50, 0.15)"
                 cornerRadius="medium"
-                padding="medium"
+                padding="small"
                 width="100%"
                 alignment="middle center"
                 gap="small"
+                border="thin"
+                borderColor="rgba(50, 205, 50, 0.5)"
               >
-                <text color="#00FF00" weight="bold">
+                <text color="#32CD32" weight="bold" size="small">
                   Vote submitted!
                 </text>
-                <text color="white">{lastVotedMove}</text>
-              </vstack>
-            )}
-
-            <text weight="bold" color="white">
-              Top Voted Moves
-            </text>
-
-            {/* Display last voted move if exists and confirmation is not showing */}
-            {lastVotedMove && !showVoteConfirmation && (
-              <vstack
-                backgroundColor="#FF45001A"
-                cornerRadius="small"
-                padding="small"
-                width="100%"
-                gap="small"
-              >
-                <text size="small" color="#888888">
-                  Your vote:
-                </text>
-                <text color="white" weight="bold">
+                <text color="white" size="small">
                   {lastVotedMove}
                 </text>
               </vstack>
             )}
 
-            {Object.entries(voteTable)
-              .sort(([_, a], [__, b]) => b - a)
-              .slice(0, 5)
-              .map(([move, votes], index) => (
-                <hstack
-                  key={move}
-                  gap="small"
-                  backgroundColor={index === 0 ? "#FF45001A" : undefined}
-                  cornerRadius="small"
-                  padding="small"
-                  width="100%"
-                >
-                  <text color="white">{move}</text>
-                  <text color="#888888">{votes}</text>
-                </hstack>
-              ))}
-            {/* Timer */}
-            <hstack
-              backgroundColor={timeLeft < 60 ? "#FF45001A" : "#1A1A1B"}
-              cornerRadius="medium"
-              padding="small"
-              alignment="middle center"
-              width="100%"
-            >
-              <text size="large" weight="bold" color="white">
-                Next Move In: {formatTime(timeLeft)}
+            {/* Display your vote */}
+            {lastVotedMove && !showVoteConfirmation && (
+              <vstack
+                backgroundColor="rgba(255, 99, 71, 0.15)"
+                cornerRadius="small"
+                padding="small"
+                width="100%"
+                gap="xsmall"
+                border="thin"
+                borderColor="rgba(255, 99, 71, 0.5)"
+              >
+                <text size="xsmall" color="#A0A0A0">
+                  Your vote:
+                </text>
+                <text color="white" weight="bold" size="small">
+                  {lastVotedMove}
+                </text>
+              </vstack>
+            )}
+
+            {/* Top Voted Moves */}
+            <vstack gap="small" width="100%">
+              <text weight="bold" color="#88CCFF" size="small">
+                Top Voted Moves
               </text>
-            </hstack>
+
+              <vstack gap="xsmall" width="100%">
+                {Object.entries(voteTable)
+                  .sort(([_, a], [__, b]) => b - a)
+                  .slice(0, 5)
+                  .map(([move, votes], index) => (
+                    <hstack
+                      key={move}
+                      gap="xsmall"
+                      backgroundColor={
+                        index === 0 ? "rgba(255, 99, 71, 0.15)" : "#333334"
+                      }
+                      cornerRadius="small"
+                      padding="small"
+                      width="100%"
+                      alignment="start center"
+                      border="thin"
+                      borderColor={
+                        index === 0 ? "rgba(255, 99, 71, 0.5)" : "#444444"
+                      }
+                    >
+                      <text color="white" size="small">
+                        {move}
+                      </text>
+                      <spacer />
+                      <text
+                        color={index === 0 ? "#FF9966" : "#A0A0A0"}
+                        weight={index === 0 ? "bold" : "regular"}
+                        size="xsmall"
+                      >
+                        {votes}
+                      </text>
+                    </hstack>
+                  ))}
+              </vstack>
+            </vstack>
           </vstack>
-        </hstack>
+        </vstack>
+      </vstack>
+    );
+  };
+
+  return (
+    <vstack width="100%" height="100%">
+      {/* Title Bar - Fixed at top with improved styling */}
+      <vstack
+        backgroundColor="#1E1E1E"
+        padding="small"
+        width="100%"
+        alignment="middle center"
+        border="thin"
+        borderColor="#444444"
+      >
+        <text size="large" weight="bold" color="#FF9966" alignment="center">
+          ♚ Kasparov vs r/{subredditName} ♔
+        </text>
+        <text color="#88CCFF" alignment="center" size="small">
+          Community chess where you vote on the next move!
+        </text>
+      </vstack>
+
+      {/* Three-column layout: History | Chessboard | Voting */}
+      <hstack width="100%" height="100%" gap="none">
+        {/* Left Sidebar - Move History */}
+        <MoveHistorySidebar />
+
+        {/* Center - Chessboard */}
+        <vstack grow alignment="middle center" backgroundColor="#2D2D30">
+          <Chessboard
+            game={gameObject}
+            curSelectedPos={curSelectedPos}
+            handleSelectPos={(pos) => {
+              console.log(pos);
+              setCurSelectedPos(pos);
+              if (pos) {
+                setValidMoves(getValidMoves(gameObject, pos));
+              } else {
+                setValidMoves([]);
+              }
+            }}
+            handleMove={handleMove}
+            validMoves={validMoves}
+            currentMoveIndex={moveIndex}
+            totalMoves={gameObject.history().length}
+            onNavigate={setMoveIndex}
+            votedFromSquare={votedFromSquare}
+            votedToSquare={votedToSquare}
+          />
+        </vstack>
+
+        {/* Right Sidebar - Timer and Voting */}
+        <VotingSidebar />
       </hstack>
     </vstack>
   );
@@ -336,10 +487,6 @@ Devvit.addSchedulerJob({
     const curBoard = await getBoardForPost(postId, context.redis);
     const topMove = await getTopMove(redis, postId);
     console.log("Top voted move: ", topMove);
-    // if (!curBoard) {
-    //   console.log("no board found");
-    //   return;
-    // }
 
     let chess = new Chess();
     console.log("Current board: ", curBoard);
@@ -351,9 +498,15 @@ Devvit.addSchedulerJob({
       console.log("Move generated by users: ", from, to);
       chess.move({ from: from, to: to });
     } else {
-      console.log("Random move");
-      let topMove = chess.moves()[0];
-      chess.move(topMove);
+      console.log("No top move found, using random legal move");
+      const legalMoves = chess.moves({ verbose: true });
+      if (legalMoves.length > 0) {
+        const randomMove =
+          legalMoves[Math.floor(Math.random() * legalMoves.length)];
+        chess.move(randomMove);
+      } else {
+        console.log("No legal moves available");
+      }
     }
 
     const newBoard = getBoardAfterEngineTurn(chess);

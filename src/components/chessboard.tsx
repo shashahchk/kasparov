@@ -52,6 +52,8 @@ interface ChessboardProps {
   currentMoveIndex: number;
   totalMoves: number;
   onNavigate: (moveIndex: number) => void;
+  votedFromSquare: string | null;
+  votedToSquare: string | null;
 }
 
 function convertIndicesToChessNotation([row, col]: Position): string {
@@ -73,6 +75,8 @@ export const Chessboard = ({
   currentMoveIndex,
   totalMoves,
   onNavigate,
+  votedFromSquare,
+  votedToSquare,
 }: ChessboardProps): JSX.Element => {
   const rows = 8;
   const cols = 8;
@@ -83,8 +87,15 @@ export const Chessboard = ({
       : game.board();
 
   return (
-    <vstack padding="medium" gap="small">
-      <vstack padding="medium" gap="none">
+    <vstack padding="medium" gap="medium" alignment="middle center">
+      <vstack
+        padding="xsmall"
+        gap="none"
+        alignment="middle center"
+        cornerRadius="small"
+        border="thin"
+        borderColor="#555555"
+      >
         {Array(rows)
           .fill(0)
           .map((_, rowIndex) => (
@@ -102,12 +113,27 @@ export const Chessboard = ({
                     colIndex,
                   ]);
 
+                  // Check if this square is part of the voted move
+                  const isVotedFromSquare =
+                    votedFromSquare === squareInChessNotation;
+                  const isVotedToSquare =
+                    votedToSquare === squareInChessNotation;
+                  const isVotedSquare = isVotedFromSquare || isVotedToSquare;
+
                   return (
                     <vstack
                       key={`cell-${rowIndex}-${colIndex}`}
-                      width="40px"
-                      height="40px"
-                      backgroundColor={isLight ? "#F0D9B5" : "#B58863"}
+                      width="42px"
+                      height="42px"
+                      backgroundColor={
+                        isVotedSquare
+                          ? isLight
+                            ? "rgba(255, 153, 102, 0.5)"
+                            : "rgba(204, 102, 0, 0.5)"
+                          : isLight
+                          ? "#E8D5AC"
+                          : "#B58863"
+                      }
                       alignment="center middle"
                       onPress={
                         piece
@@ -121,25 +147,38 @@ export const Chessboard = ({
                           <vstack
                             width="100%"
                             height="100%"
-                            backgroundColor="rgba(100, 180, 100, 0.5)"
+                            backgroundColor="rgba(135, 206, 250, 0.4)"
                             alignment="center middle"
                           >
                             <text
-                              size={"xxlarge"}
-                              // weight="bold"
+                              size={"xlarge"}
                               color={pieceIsWhite ? "white" : "black"}
+                              weight="bold"
                             >
                               {CHESS_PIECE_ICONS[pieceIndex]}
                             </text>
                           </vstack>
                         ) : (
-                          <text
-                            size={"xxlarge"}
-                            // weight="bold"
-                            color={pieceIsWhite ? "white" : "black"}
+                          <vstack
+                            width="100%"
+                            height="100%"
+                            alignment="center middle"
+                            backgroundColor={
+                              isVotedSquare
+                                ? isVotedFromSquare
+                                  ? "rgba(255, 153, 102, 0.3)"
+                                  : "rgba(255, 153, 102, 0.6)"
+                                : "transparent"
+                            }
                           >
-                            {CHESS_PIECE_ICONS[pieceIndex]}
-                          </text>
+                            <text
+                              size={"xlarge"}
+                              color={pieceIsWhite ? "white" : "black"}
+                              weight="bold"
+                            >
+                              {CHESS_PIECE_ICONS[pieceIndex]}
+                            </text>
+                          </vstack>
                         ))}
                       {curSelectedPos &&
                         validMoves.filter(
@@ -149,7 +188,7 @@ export const Chessboard = ({
                             width="60%"
                             height="60%"
                             cornerRadius="full"
-                            backgroundColor="rgba(100, 180, 100, 0.4)"
+                            backgroundColor="rgba(76, 175, 80, 0.5)"
                             alignment="center middle"
                             onPress={() => handleMove(squareInChessNotation)}
                           />
@@ -161,28 +200,46 @@ export const Chessboard = ({
           ))}
       </vstack>
 
-      <hstack gap="medium" alignment="center middle">
-        <button onPress={() => onNavigate(0)} disabled={currentMoveIndex <= 0}>
+      <hstack
+        gap="small"
+        alignment="center middle"
+        backgroundColor="#333334"
+        padding="small"
+        cornerRadius="medium"
+        border="thin"
+        borderColor="#444444"
+      >
+        <button
+          onPress={() => onNavigate(0)}
+          disabled={currentMoveIndex <= 0}
+          appearance="bordered"
+        >
           {"<<"}
         </button>
         <button
           onPress={() => onNavigate(currentMoveIndex - 1)}
           disabled={currentMoveIndex <= 0}
+          appearance="bordered"
         >
           {"<"}
         </button>
 
-        <text>{`Move ${currentMoveIndex} of ${totalMoves}`}</text>
+        <text
+          size="small"
+          color="white"
+        >{`Move ${currentMoveIndex} of ${totalMoves}`}</text>
 
         <button
           onPress={() => onNavigate(currentMoveIndex + 1)}
           disabled={currentMoveIndex >= totalMoves}
+          appearance="bordered"
         >
           {">"}
         </button>
         <button
           onPress={() => onNavigate(totalMoves)}
           disabled={currentMoveIndex >= totalMoves}
+          appearance="bordered"
         >
           {">>"}
         </button>
