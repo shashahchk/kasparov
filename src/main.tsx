@@ -59,20 +59,60 @@ function getKey(postId: string | undefined): string {
   return `kasparov_:${postId}`;
 }
 
-const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
-  const getMoveTable = async () => {
-    let moves = await redis.hGetAll(getKey(postId));
-    // return map with values casted to integers
-    return Object.fromEntries(
-      Object.entries(moves).map(([key, value]) => [key, parseInt(value)])
-    );
-  };
+function getMoveKey(moveString: string): string {
+  return `move:${moveString}`;
+}
 
+function isMoveKey(moveKey: string): boolean {
+  return moveKey.slice(0, 5) === "move:";
+}
+
+function getMoveFromKey(moveKey: string): string {
+  if (moveKey.slice(0, 5) !== "move:") {
+    throw new Error("Invalid move key");
+  }
+
+  const moveString = moveKey.slice(5);
+  return moveString;
+}
+
+function getBoardKey(): string {
+  return "kasparov_board";
+}
+
+const getMoveTable = async (redis: RedisClient, postId: string | undefined) => {
+  let moves = await redis.hGetAll(getKey(postId));
+  // return map with values casted to integers
+  return Object.fromEntries(
+    Object.entries(moves)
+      .filter(([key, value]) => isMoveKey(key))
+      .map(([key, value]) => [getMoveFromKey(key), parseInt(value)])
+  );
+};
+
+const getTopMove = async (
+  redis: RedisClient,
+  postId: string | undefined
+): Promise<[string, string] | undefined> => {
+  const moveTable = await getMoveTable(redis, postId);
+  const sortedMoves = Object.entries(moveTable).sort((a, b) => b[1] - a[1]);
+  let topMove = sortedMoves[0] ? sortedMoves[0][0] : null;
+
+  if (topMove) {
+    let [from, to] = topMove.split("-");
+
+    return [from, to];
+  }
+};
+
+const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [voteTable, setVoteTable] = useState<Record<string, number>>(async () =>
-    getMoveTable()
+    getMoveTable(redis, postId)
   );
 
-  const [game, setGame] = useState<PGN>(initBoard());
+  const [game, setGame] = useState<PGN>(
+    async () => await getBoardForPost(postId, redis)
+  );
   const [curSelectedPos, setCurSelectedPos] = useState<string | null>(null);
   const [move, setMove] = useState<string | null>(null);
   const [validMoves, setValidMoves] = useState<string[]>([]);
@@ -83,7 +123,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     useState<boolean>(false);
 
   const [timeLeft, setTimeLeft] = useState<number>(300); // 5 minutes in seconds
-  const [moveIndex, setMoveIndex] = useState<number>(15);
+  const [moveIndex, setMoveIndex] = useState<number>(0);
 
   const gameObject = new Chess();
   let isLoaded = gameObject.loadPgn(game);
@@ -100,7 +140,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     if (curSelectedPos == null || newPos == null) return;
     const moveString = getMoveString({ from: curSelectedPos, to: newPos });
     setMove(moveString);
-    await redis.hIncrBy(getKey(postId), moveString, 1);
+    await redis.hIncrBy(getKey(postId), getMoveKey(moveString), 1);
     setCurSelectedPos(null);
     setValidMoves([]);
     setVoteTable({
@@ -168,7 +208,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             </text>
 
             {/* Vote confirmation message - Integrated into side panel */}
-            {showVoteConfirmation && (
+            {showVoteConfirmation && lastVotedMove && (
               <vstack
                 backgroundColor="rgba(0, 255, 0, 0.1)"
                 cornerRadius="medium"
@@ -255,42 +295,68 @@ Devvit.addSchedulerJob({
   },
 });
 
-// TODO: Add api call
-function getBoardAfterEngineTurn(board: Board): Board {
-  return board;
+function getBoardAfterEngineTurn(chess: Chess): Chess {
+  let fen = chess.fen();
+  let BOT_LEVEL = 3;
+  let botMove = aiMove(fen, BOT_LEVEL);
+
+  let from = Object.keys(botMove)[0];
+  let to = botMove[from];
+  console.log("Bot move: ", from, to);
+
+  chess.move({ from: from.toLowerCase(), to: to.toLowerCase() });
+  return chess;
 }
 
 async function getBoardForPost(
-  postId: string,
+  postId: string | undefined,
   redis: RedisClient
-): Promise<Board | undefined> {
-  const board = await redis.get(getKey(postId));
-  if (board) {
-    return JSON.parse(board);
+): Promise<string> {
+  const boardPGN = await redis.hGet(getKey(postId), getBoardKey());
+  if (boardPGN) {
+    return boardPGN;
   } else {
-    return undefined;
+    return initBoard();
   }
 }
 
 Devvit.addSchedulerJob({
   name: UPDATE_BOARD_JOB,
   onRun: async (event, context) => {
-    const { redis, postId } = context;
-
+    console.log("Board Job Running");
+    console.log(context);
+    console.log(event);
+    const { redis } = context;
+    const { postId } = event.data;
     if (!postId) {
       console.log("no post id");
       return;
     }
 
     const curBoard = await getBoardForPost(postId, context.redis);
+    const topMove = await getTopMove(redis, postId);
+    console.log("Top voted move: ", topMove);
+    // if (!curBoard) {
+    //   console.log("no board found");
+    //   return;
+    // }
 
-    if (!curBoard) {
-      console.log("no board found");
-      return;
+    let chess = new Chess();
+    console.log("Current board: ", curBoard);
+    chess.loadPgn(curBoard);
+    console.log("Loaded current board");
+
+    if (topMove) {
+      let [from, to] = topMove;
+      console.log("Move generated by users: ", from, to);
+      chess.move({ from: from, to: to });
+    } else {
+      console.log("Random move");
+      let topMove = chess.moves()[0];
+      chess.move(topMove);
     }
 
-    const newBoard = getBoardAfterEngineTurn(curBoard);
-
+    const newBoard = getBoardAfterEngineTurn(chess);
     await redis.set(getKey(postId), JSON.stringify(newBoard));
   },
 });
@@ -314,18 +380,20 @@ Devvit.addTrigger({
 
 Devvit.addTrigger({
   event: "PostCreate",
-  onEvent: async (_, context) => {
+  onEvent: async (object, context) => {
+    console.log("post created");
     const userId = context.userId;
     if (userId !== "kasparov-app") {
       console.log("user is not kasparov. Actual user: ", userId);
-      return;
+      // return;
     }
 
     try {
+      console.log(object.post?.id);
       const jobId = await context.scheduler.runJob({
-        cron: "0 12 * * *",
+        cron: "* * * * *",
         name: UPDATE_BOARD_JOB,
-        data: {},
+        data: { postId: object.post?.id || "" },
       });
       await context.redis.set("upateBoardJobId", jobId); // in case want to cancel
     } catch (e) {

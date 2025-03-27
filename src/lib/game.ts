@@ -18,9 +18,6 @@ export function getMoveString(move: Move): string {
 
 export function initBoard(): PGN {
   const chess = new Chess();
-  for (let i = 0; i < 15; i++) {
-    chess.move(chess.moves()[Math.floor(Math.random() * chess.moves().length)]);
-  }
   return chess.pgn();
 }
 
