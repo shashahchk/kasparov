@@ -357,7 +357,8 @@ Devvit.addSchedulerJob({
     }
 
     const newBoard = getBoardAfterEngineTurn(chess);
-    await redis.set(getKey(postId), JSON.stringify(newBoard));
+    await redis.del(getKey(postId));
+    await redis.hSet(getKey(postId), { [getBoardKey()]: newBoard.pgn() });
   },
 });
 
