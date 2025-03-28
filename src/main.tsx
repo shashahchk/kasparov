@@ -604,8 +604,15 @@ function getBoardAfterEngineTurn(chess: Chess): Chess {
 
   let from = Object.keys(botMove)[0];
   let to = botMove[from];
+  try {
+    chess.move({ from: from.toLowerCase(), to: to.toLowerCase() });
+  } catch (e) {
+    let moves = chess.moves();
+    let randomMove = moves[Math.floor(Math.random() * moves.length)];
 
-  chess.move({ from: from.toLowerCase(), to: to.toLowerCase() });
+    chess.move(randomMove);
+  }
+
   return chess;
 }
 
