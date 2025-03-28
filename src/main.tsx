@@ -216,7 +216,6 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
         width="150px"
         height="100%"
         padding="none"
-        maxHeight={"400px"}
       >
         <vstack
           backgroundColor="#3C3C3D"
