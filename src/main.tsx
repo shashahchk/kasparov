@@ -73,6 +73,8 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     getMoveTable(redis, postId)
   );
 
+  let [boardCache, setBoardCache] = useState<Record<number, Board>>({});
+
   const [game, setGame] = useState<PGN>(
     async () => await getBoardForPost(postId, redis)
   );
@@ -91,7 +93,12 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
   const MOVE_TIME_DURATION_S = 60;
   const [timeLeft, setTimeLeft] = useState<number>(MOVE_TIME_DURATION_S); // 5 minutes in seconds
-  const [moveIndex, setMoveIndex] = useState<number>(0);
+  const [moveIndex, setMoveIndex] = useState<number>(async () => {
+    let gamePgn = await getBoardForPost(postId, redis);
+    let chess = new Chess();
+    chess.loadPgn(gamePgn);
+    return chess.history().length;
+  });
   const [subredditName, setSubredditName] = useState<string>(
     async () => await reddit.getCurrentSubredditName()
   );
@@ -107,10 +114,6 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const gameObject = new Chess();
   let isLoaded = gameObject.loadPgn(game);
   let historyLength = gameObject.history().length;
-
-  if (historyLength != moveIndex) {
-    setMoveIndex(historyLength);
-  }
 
   if (gameObject.isGameOver()) {
     setIsGameOver(true);
@@ -235,34 +238,36 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
               No moves yet
             </text>
           ) : (
-            moveHistory.map((move, index) => {
-              const isBot = index % 2 === 1; // Odd moves are bot moves
-              const moveNumber = Math.floor(index / 2) + 1;
-              const moveNotation = `${move.from}-${move.to}`;
+            moveHistory
+              .map((move, index) => {
+                const isBot = index % 2 === 1; // Odd moves are bot moves
+                const moveNumber = Math.floor(index / 2) + 1;
+                const moveNotation = `${move.from}-${move.to}`;
 
-              return (
-                <vstack
-                  key={`move-${index}`}
-                  backgroundColor={
-                    index === moveIndex ? "rgba(255, 99, 71, 0.2)" : undefined
-                  }
-                  cornerRadius="small"
-                  padding="small"
-                  // onPress={() => setMoveIndex(index)}
-                >
-                  <text size="xsmall" color={isBot ? "#FF9966" : "#88CCFF"}>
-                    {moveNumber}. {isBot ? "Bot" : `r/${subredditName}`}
-                  </text>
-                  <text
-                    size="xsmall"
-                    color="white"
-                    weight={index === moveIndex ? "bold" : "regular"}
+                return (
+                  <vstack
+                    key={`move-${index}`}
+                    backgroundColor={
+                      index === moveIndex ? "rgba(255, 99, 71, 0.2)" : undefined
+                    }
+                    cornerRadius="small"
+                    padding="small"
+                    // onPress={() => setMoveIndex(index)}
                   >
-                    {moveNotation}
-                  </text>
-                </vstack>
-              );
-            })
+                    <text size="xsmall" color={isBot ? "#FF9966" : "#88CCFF"}>
+                      {moveNumber}. {isBot ? "Bot" : `r/${subredditName}`}
+                    </text>
+                    <text
+                      size="xsmall"
+                      color="white"
+                      weight={index === moveIndex ? "bold" : "regular"}
+                    >
+                      {moveNotation}
+                    </text>
+                  </vstack>
+                );
+              })
+              .slice(moveHistory.length - 7, moveHistory.length)
           )}
         </vstack>
       </vstack>
@@ -494,6 +499,8 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
         <vstack grow alignment="middle center" backgroundColor="#2D2D30">
           <Chessboard
+            boardCache={boardCache}
+            setBoardCache={setBoardCache}
             game={gameObject}
             curSelectedPos={curSelectedPos}
             handleSelectPos={(pos) => {
@@ -545,7 +552,7 @@ function getBoardAfterEngineTurn(chess: Chess): Chess {
   }
 
   let fen = chess.fen();
-  let BOT_LEVEL = 3;
+  let BOT_LEVEL = 4;
   let botMove = aiMove(fen, BOT_LEVEL);
 
   let from = Object.keys(botMove)[0];
