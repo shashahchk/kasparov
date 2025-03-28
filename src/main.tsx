@@ -266,7 +266,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
                   </vstack>
                 );
               })
-              .slice(moveHistory.length - 7, moveHistory.length)
+              .slice(moveHistory.length - 5, moveHistory.length)
           )}
         </vstack>
       </vstack>
