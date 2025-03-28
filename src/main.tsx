@@ -55,6 +55,24 @@ Devvit.addMenuItem({
   },
 });
 
+async function updateTime(redis: RedisClient, postId: string | undefined) {
+  await redis.set(getTimeKey(postId), new Date().toISOString());
+}
+
+async function getTime(
+  redis: RedisClient,
+  postId: string | undefined
+): Promise<string | undefined> {
+  const time = await redis.get(getTimeKey(postId));
+  console.log(time);
+  if (time) {
+    return time;
+  }
+}
+function getTimeKey(postId: string | undefined): string {
+  return `kasparov_time:${postId}`;
+}
+
 function getKey(postId: string | undefined): string {
   return `kasparov_:${postId}`;
 }
@@ -131,24 +149,89 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [subredditName, setSubredditName] = useState<string>(
     async () => await reddit.getCurrentSubredditName()
   );
+  const [lastMoveTime, setLastMoveTime] = useState<string>(
+    async () => (await getTime(redis, postId)) || ""
+  );
+  const [botIsThinking, setBotThinking] = useState<boolean>(false);
+  const [isGameOver, setIsGameOver] = useState<boolean>(false);
+  const [gameResult, setGameResult] = useState<string>("");
 
   // Fetch subreddit name
   const gameObject = new Chess();
   let isLoaded = gameObject.loadPgn(game);
+  let historyLength = gameObject.history().length;
+  if (historyLength != moveIndex) {
+    setMoveIndex(historyLength);
+  }
+
+  if (gameObject.isGameOver()) {
+    setIsGameOver(true);
+    if (gameObject.isCheckmate()) {
+      setGameResult(
+        gameObject.turn() === "w"
+          ? "Black wins (Kasparov)"
+          : "White wins (Community)"
+      );
+    } else if (gameObject.isDraw()) {
+      setGameResult("Game ended in draw");
+    } else if (gameObject.isStalemate()) {
+      setGameResult("Game ended in stalemate");
+    } else {
+      setGameResult("Game over");
+    }
+  }
 
   // Get move history to display in sidebar
   const moveHistory = gameObject.history({ verbose: true });
 
-  let timer =
-    // Mock timer countdown
-    useInterval(() => {
-      setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
+  // Calculate time since lastMoveTime
+  let timer = useInterval(async () => {
+    const now = new Date();
+    console.log(lastMoveTime);
+    const lastMoveDate = new Date(lastMoveTime);
+    console.log(lastMoveDate);
+    const timeDiff = Math.floor(
+      (now.getTime() - lastMoveDate.getTime()) / 1000
+    );
+    console.log(timeDiff);
+    if (60 - timeDiff <= 1) {
+      setBotThinking(true);
+    }
+    setTimeLeft(60 - timeDiff);
+  }, 1000);
+
+  const refetchEverything = async () => {
+    if (botIsThinking) {
+      console.log("Refetching Everything");
+      setVoteTable(await getMoveTable(redis, postId));
+      setGame(await getBoardForPost(postId, redis));
+      let time = await getTime(redis, postId);
+      if (time && time !== lastMoveTime) {
+        setBotThinking(false);
+        setVoteTable({});
+        setLastVotedMove(null);
+        setShowVoteConfirmation(false);
+        setMoveIndex(gameObject.history().length + 2);
+        setMove(null);
+        setCurSelectedPos(null);
+        setVotedFromSquare(null);
+        setVotedToSquare(null);
+        setLastMoveTime(time);
+      }
+    }
+  };
+
+  useInterval(async () => {
+    console.log("Use interval triggered");
+    if (botIsThinking) {
+      await refetchEverything();
+    }
+  }, 500).start();
 
   timer.start();
 
   const handleMove = async (newPos: string | null) => {
-    if (curSelectedPos == null || newPos == null) return;
+    if (isGameOver || curSelectedPos == null || newPos == null) return;
     const moveString = getMoveString({ from: curSelectedPos, to: newPos });
     setMove(moveString);
     await redis.hIncrBy(getKey(postId), getMoveKey(moveString), 1);
@@ -173,6 +256,9 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   };
 
   const formatTime = (seconds: number): string => {
+    // Handle negative time values
+    if (seconds < 0) return "0:00";
+
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
@@ -254,43 +340,101 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
           alignment="middle center"
         >
           <text size="small" weight="bold" color="white" alignment="center">
-            Vote to Play
+            {isGameOver ? "Game Results" : "Vote to Play"}
           </text>
         </vstack>
 
         <vstack padding="small" gap="medium" width="100%">
-          {/* Timer */}
-          <vstack
-            backgroundColor={
-              timeLeft < 60 ? "rgba(255, 99, 71, 0.15)" : "#333334"
-            }
-            cornerRadius="medium"
-            padding="small"
-            alignment="middle center"
-            width="100%"
-            border="thin"
-            borderColor={timeLeft < 60 ? "rgba(255, 99, 71, 0.5)" : "#444444"}
-          >
-            <text size="small" color="#A0A0A0">
-              Next Move In
-            </text>
-            <text
-              size="large"
-              weight="bold"
-              color={timeLeft < 60 ? "#FF6347" : "white"}
+          {/* Timer - Only show if game is not over */}
+          {!isGameOver ? (
+            <vstack
+              backgroundColor={
+                botIsThinking
+                  ? "rgba(100, 149, 237, 0.15)"
+                  : timeLeft < 60
+                  ? "rgba(255, 99, 71, 0.15)"
+                  : "#333334"
+              }
+              cornerRadius="medium"
+              padding="small"
+              alignment="middle center"
+              width="100%"
+              border="thin"
+              borderColor={
+                botIsThinking
+                  ? "rgba(100, 149, 237, 0.5)"
+                  : timeLeft < 60
+                  ? "rgba(255, 99, 71, 0.5)"
+                  : "#444444"
+              }
             >
-              {formatTime(timeLeft)}
-            </text>
-          </vstack>
+              <text size="small" color="#A0A0A0">
+                {botIsThinking ? "Kasparov is thinking..." : "Next Move In"}
+              </text>
+              {!botIsThinking && (
+                <text
+                  size="large"
+                  weight="bold"
+                  color={timeLeft < 60 ? "#FF6347" : "white"}
+                >
+                  {formatTime(timeLeft)}
+                </text>
+              )}
+              {botIsThinking && (
+                <text size="medium" weight="bold" color="#6495ED">
+                  Calculating move...
+                </text>
+              )}
+            </vstack>
+          ) : (
+            <vstack
+              backgroundColor="rgba(50, 50, 50, 0.3)"
+              cornerRadius="medium"
+              padding="small"
+              alignment="middle center"
+              width="100%"
+              border="thin"
+              borderColor="rgba(100, 100, 100, 0.5)"
+            >
+              <text size="small" color="#A0A0A0">
+                Game Status
+              </text>
+              <text
+                size="medium"
+                weight="bold"
+                color={gameResult.includes("White") ? "#88CCFF" : "#FF9966"}
+              >
+                {gameResult}
+              </text>
+            </vstack>
+          )}
 
-          {/* Voting Section */}
+          {/* Voting Section - Only show active voting if game is not over */}
           <vstack width="100%" gap="small">
             <text size="small" weight="bold" color="#88CCFF">
-              Vote for the next move
+              {isGameOver ? "Final Moves" : "Vote for the next move"}
             </text>
 
-            {/* Vote confirmation message */}
-            {showVoteConfirmation && lastVotedMove && (
+            {/* Show game over message if game is over */}
+            {isGameOver && (
+              <vstack
+                backgroundColor="rgba(100, 100, 100, 0.15)"
+                cornerRadius="medium"
+                padding="small"
+                width="100%"
+                alignment="middle center"
+                gap="small"
+                border="thin"
+                borderColor="rgba(100, 100, 100, 0.5)"
+              >
+                <text color="#A0A0A0" size="small">
+                  Voting is closed
+                </text>
+              </vstack>
+            )}
+
+            {/* Vote confirmation message - Only show if game is not over */}
+            {!isGameOver && showVoteConfirmation && lastVotedMove && (
               <vstack
                 backgroundColor="rgba(50, 205, 50, 0.15)"
                 cornerRadius="medium"
@@ -310,8 +454,8 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
               </vstack>
             )}
 
-            {/* Display your vote */}
-            {lastVotedMove && !showVoteConfirmation && (
+            {/* Display your vote - Only show if game is not over */}
+            {!isGameOver && lastVotedMove && !showVoteConfirmation && (
               <vstack
                 backgroundColor="rgba(255, 99, 71, 0.15)"
                 cornerRadius="small"
@@ -333,7 +477,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             {/* Top Voted Moves */}
             <vstack gap="small" width="100%">
               <text weight="bold" color="#88CCFF" size="small">
-                Top Voted Moves
+                {isGameOver ? "Final Voting Results" : "Top Voted Moves"}
               </text>
 
               <vstack gap="xsmall" width="100%">
@@ -407,7 +551,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             game={gameObject}
             curSelectedPos={curSelectedPos}
             handleSelectPos={(pos) => {
-              console.log(pos);
+              if (isGameOver) return;
               setCurSelectedPos(pos);
               if (pos) {
                 setValidMoves(getValidMoves(gameObject, pos));
@@ -422,6 +566,8 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             onNavigate={setMoveIndex}
             votedFromSquare={votedFromSquare}
             votedToSquare={votedToSquare}
+            isGameOver={isGameOver}
+            gameResult={gameResult}
           />
         </vstack>
 
@@ -447,13 +593,17 @@ Devvit.addSchedulerJob({
 });
 
 function getBoardAfterEngineTurn(chess: Chess): Chess {
+  // If game is already over, return the board as is
+  if (chess.isGameOver()) {
+    return chess;
+  }
+
   let fen = chess.fen();
   let BOT_LEVEL = 3;
   let botMove = aiMove(fen, BOT_LEVEL);
 
   let from = Object.keys(botMove)[0];
   let to = botMove[from];
-  console.log("Bot move: ", from, to);
 
   chess.move({ from: from.toLowerCase(), to: to.toLowerCase() });
   return chess;
@@ -512,6 +662,7 @@ Devvit.addSchedulerJob({
     const newBoard = getBoardAfterEngineTurn(chess);
     await redis.del(getKey(postId));
     await redis.hSet(getKey(postId), { [getBoardKey()]: newBoard.pgn() });
+    await updateTime(context.redis, postId);
   },
 });
 
@@ -550,6 +701,7 @@ Devvit.addTrigger({
         data: { postId: object.post?.id || "" },
       });
       await context.redis.set("upateBoardJobId", jobId); // in case want to cancel
+      await updateTime(context.redis, object.post?.id);
     } catch (e) {
       console.log("error was not able to schedule:", e);
       throw e;
