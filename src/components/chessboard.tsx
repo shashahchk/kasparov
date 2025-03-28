@@ -157,7 +157,9 @@ export const Chessboard = ({
                       }
                       alignment="center middle"
                       onPress={
-                        !isGameOver && !curSelectedPos && piece
+                        !isGameOver &&
+                        (!curSelectedPos || piece?.color == "w") &&
+                        piece
                           ? () => handleSelectPos(squareInChessNotation)
                           : undefined
                       }
