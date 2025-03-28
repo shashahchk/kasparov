@@ -17,6 +17,15 @@ import {
 } from "./lib/game.js";
 import { Chess } from "chess.js";
 import { Game, move, status, moves, aiMove, getFen } from "js-chess-engine";
+import {
+  getTimeKey,
+  getMoveTable,
+  getTime,
+  getKey,
+  getMoveKey,
+  getBoardKey,
+  getTopMove,
+} from "./lib/redis.js";
 
 // const gameClient = chess.create();
 
@@ -59,70 +68,6 @@ async function updateTime(redis: RedisClient, postId: string | undefined) {
   await redis.set(getTimeKey(postId), new Date().toISOString());
 }
 
-async function getTime(
-  redis: RedisClient,
-  postId: string | undefined
-): Promise<string | undefined> {
-  const time = await redis.get(getTimeKey(postId));
-  console.log(time);
-  if (time) {
-    return time;
-  }
-}
-function getTimeKey(postId: string | undefined): string {
-  return `kasparov_time:${postId}`;
-}
-
-function getKey(postId: string | undefined): string {
-  return `kasparov_:${postId}`;
-}
-
-function getMoveKey(moveString: string): string {
-  return `move:${moveString}`;
-}
-
-function isMoveKey(moveKey: string): boolean {
-  return moveKey.slice(0, 5) === "move:";
-}
-
-function getMoveFromKey(moveKey: string): string {
-  if (moveKey.slice(0, 5) !== "move:") {
-    throw new Error("Invalid move key");
-  }
-
-  const moveString = moveKey.slice(5);
-  return moveString;
-}
-
-function getBoardKey(): string {
-  return "kasparov_board";
-}
-
-const getMoveTable = async (redis: RedisClient, postId: string | undefined) => {
-  let moves = await redis.hGetAll(getKey(postId));
-  // return map with values casted to integers
-  return Object.fromEntries(
-    Object.entries(moves)
-      .filter(([key, value]) => isMoveKey(key))
-      .map(([key, value]) => [getMoveFromKey(key), parseInt(value)])
-  );
-};
-
-const getTopMove = async (
-  redis: RedisClient,
-  postId: string | undefined
-): Promise<[string, string] | undefined> => {
-  const moveTable = await getMoveTable(redis, postId);
-  const sortedMoves = Object.entries(moveTable).sort((a, b) => b[1] - a[1]);
-  let topMove = sortedMoves[0] ? sortedMoves[0][0] : null;
-
-  if (topMove) {
-    let [from, to] = topMove.split("-");
-
-    return [from, to];
-  }
-};
-
 const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [voteTable, setVoteTable] = useState<Record<string, number>>(async () =>
     getMoveTable(redis, postId)
@@ -144,7 +89,8 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [votedFromSquare, setVotedFromSquare] = useState<string | null>(null);
   const [votedToSquare, setVotedToSquare] = useState<string | null>(null);
 
-  const [timeLeft, setTimeLeft] = useState<number>(60); // 5 minutes in seconds
+  const MOVE_TIME_DURATION_S = 60;
+  const [timeLeft, setTimeLeft] = useState<number>(MOVE_TIME_DURATION_S); // 5 minutes in seconds
   const [moveIndex, setMoveIndex] = useState<number>(0);
   const [subredditName, setSubredditName] = useState<string>(
     async () => await reddit.getCurrentSubredditName()
@@ -152,14 +98,16 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [lastMoveTime, setLastMoveTime] = useState<string>(
     async () => (await getTime(redis, postId)) || ""
   );
-  const [botIsThinking, setBotThinking] = useState<boolean>(false);
+  const [isBotThinking, setIsBotThinking] = useState<boolean>(false);
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [gameResult, setGameResult] = useState<string>("");
+  const [isMoveInProgress, setIsMoveInProgress] = useState<boolean>(false);
 
   // Fetch subreddit name
   const gameObject = new Chess();
   let isLoaded = gameObject.loadPgn(game);
   let historyLength = gameObject.history().length;
+
   if (historyLength != moveIndex) {
     setMoveIndex(historyLength);
   }
@@ -186,47 +134,54 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
   // Calculate time since lastMoveTime
   let timer = useInterval(async () => {
+    if (isMoveInProgress) {
+      await refetchEverything();
+      setIsBotThinking(false);
+      return;
+    }
+
     const now = new Date();
-    console.log(lastMoveTime);
     const lastMoveDate = new Date(lastMoveTime);
-    console.log(lastMoveDate);
-    const timeDiff = Math.floor(
+    const timeSinceLastMoved = Math.floor(
       (now.getTime() - lastMoveDate.getTime()) / 1000
     );
-    console.log(timeDiff);
-    if (60 - timeDiff <= 1) {
-      setBotThinking(true);
+    // console.log(lastMoveTime);
+    // console.log(lastMoveDate);
+    console.log("time since last mved", timeSinceLastMoved);
+
+    console.log(
+      "move time duration - time since last move: ",
+      MOVE_TIME_DURATION_S - timeSinceLastMoved
+    );
+    if (MOVE_TIME_DURATION_S - timeSinceLastMoved <= 0) {
+      console.log("set bot thinking to true");
+      setIsBotThinking(true);
+      // setIsBotThinking(true);
     }
-    setTimeLeft(60 - timeDiff);
+
+    setTimeLeft(MOVE_TIME_DURATION_S - timeSinceLastMoved);
+    // if (isBotThinking) {
+    //   await refetchEverything();
+    // }
   }, 1000);
 
   const refetchEverything = async () => {
-    if (botIsThinking) {
-      console.log("Refetching Everything");
-      setVoteTable(await getMoveTable(redis, postId));
-      setGame(await getBoardForPost(postId, redis));
-      let time = await getTime(redis, postId);
-      if (time && time !== lastMoveTime) {
-        setBotThinking(false);
-        setVoteTable({});
-        setLastVotedMove(null);
-        setShowVoteConfirmation(false);
-        setMoveIndex(gameObject.history().length + 2);
-        setMove(null);
-        setCurSelectedPos(null);
-        setVotedFromSquare(null);
-        setVotedToSquare(null);
-        setLastMoveTime(time);
-      }
+    console.log("Refetching Everything");
+    setVoteTable(await getMoveTable(redis, postId));
+    setGame(await getBoardForPost(postId, redis));
+    let time = await getTime(redis, postId);
+    if (time && time !== lastMoveTime) {
+      setVoteTable({});
+      setLastVotedMove(null);
+      setShowVoteConfirmation(false);
+      setMoveIndex(gameObject.history().length + 2);
+      setMove(null);
+      setCurSelectedPos(null);
+      setVotedFromSquare(null);
+      setVotedToSquare(null);
+      setLastMoveTime(time);
     }
   };
-
-  useInterval(async () => {
-    console.log("Use interval triggered");
-    if (botIsThinking) {
-      await refetchEverything();
-    }
-  }, 500).start();
 
   timer.start();
 
@@ -259,8 +214,8 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     // Handle negative time values
     if (seconds < 0) return "0:00";
 
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
+    const mins = Math.floor(seconds / MOVE_TIME_DURATION_S);
+    const secs = seconds % MOVE_TIME_DURATION_S;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
@@ -272,6 +227,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
         width="150px"
         height="100%"
         padding="none"
+        maxHeight={"400px"}
       >
         <vstack
           backgroundColor="#3C3C3D"
@@ -284,7 +240,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
           </text>
         </vstack>
 
-        <vstack gap="xsmall" padding="small" height="100%">
+        <vstack gap="xsmall" padding="small" height="100%" grow>
           {moveHistory.length === 0 ? (
             <text color="#A0A0A0" alignment="center" size="xsmall">
               No moves yet
@@ -303,7 +259,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
                   }
                   cornerRadius="small"
                   padding="small"
-                  onPress={() => setMoveIndex(index)}
+                  // onPress={() => setMoveIndex(index)}
                 >
                   <text size="xsmall" color={isBot ? "#FF9966" : "#88CCFF"}>
                     {moveNumber}. {isBot ? "Bot" : `r/${subredditName}`}
@@ -349,9 +305,9 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
           {!isGameOver ? (
             <vstack
               backgroundColor={
-                botIsThinking
+                isBotThinking
                   ? "rgba(100, 149, 237, 0.15)"
-                  : timeLeft < 60
+                  : timeLeft < MOVE_TIME_DURATION_S
                   ? "rgba(255, 99, 71, 0.15)"
                   : "#333334"
               }
@@ -361,26 +317,26 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
               width="100%"
               border="thin"
               borderColor={
-                botIsThinking
+                isBotThinking
                   ? "rgba(100, 149, 237, 0.5)"
-                  : timeLeft < 60
+                  : timeLeft < MOVE_TIME_DURATION_S
                   ? "rgba(255, 99, 71, 0.5)"
                   : "#444444"
               }
             >
               <text size="small" color="#A0A0A0">
-                {botIsThinking ? "Kasparov is thinking..." : "Next Move In"}
+                {isBotThinking ? "Kasparov is thinking..." : "Next Move In"}
               </text>
-              {!botIsThinking && (
+              {!isBotThinking && (
                 <text
                   size="large"
                   weight="bold"
-                  color={timeLeft < 60 ? "#FF6347" : "white"}
+                  color={timeLeft < MOVE_TIME_DURATION_S ? "#FF6347" : "white"}
                 >
                   {formatTime(timeLeft)}
                 </text>
               )}
-              {botIsThinking && (
+              {isBotThinking && (
                 <text size="medium" weight="bold" color="#6495ED">
                   Calculating move...
                 </text>
@@ -546,6 +502,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
         <MoveHistorySidebar />
 
         {/* Center - Chessboard */}
+
         <vstack grow alignment="middle center" backgroundColor="#2D2D30">
           <Chessboard
             game={gameObject}
