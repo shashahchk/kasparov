@@ -14,6 +14,7 @@ import {
   initBoard,
   Move,
   getValidMoves,
+  navigateToMove,
 } from "./lib/game.js";
 import { Chess } from "chess.js";
 import { Game, move, status, moves, aiMove, getFen } from "js-chess-engine";
@@ -108,6 +109,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   const [isBotThinking, setIsBotThinking] = useState<boolean>(false);
   const [isGameOver, setIsGameOver] = useState<boolean>(false);
   const [gameResult, setGameResult] = useState<string>("");
+  const [previewGame, setPreviewGame] = useState<Board | null>(null);
   const [isMoveInProgress, setIsMoveInProgress] = useState<boolean>(false);
 
   // Fetch subreddit name
@@ -506,6 +508,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
         <vstack grow alignment="middle center" backgroundColor="#2D2D30">
           <Chessboard
+            previewGame={previewGame}
             boardCache={boardCache}
             setBoardCache={setBoardCache}
             game={gameObject}
@@ -523,7 +526,12 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             validMoves={validMoves}
             currentMoveIndex={moveIndex}
             totalMoves={historyLength}
-            onNavigate={setMoveIndex}
+            onNavigate={(moveIndex: number) => {
+              setMoveIndex(moveIndex);
+              setPreviewGame(
+                navigateToMove(gameObject.pgn(), moveIndex).board()
+              );
+            }}
             votedFromSquare={votedFromSquare}
             votedToSquare={votedToSquare}
             isGameOver={isGameOver}

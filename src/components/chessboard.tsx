@@ -58,6 +58,7 @@ interface ChessboardProps {
   gameResult?: string;
   setBoardCache: (boardCache: Record<number, Board>) => void;
   boardCache: Record<number, Board>;
+  previewGame: Board;
 }
 
 function convertIndicesToChessNotation([row, col]: Position): string {
@@ -91,6 +92,7 @@ export const Chessboard = ({
   votedToSquare,
   isGameOver,
   gameResult,
+  previewGame,
 }: ChessboardProps): JSX.Element => {
   const rows = 8;
   const cols = 8;
@@ -113,20 +115,10 @@ export const Chessboard = ({
       return {};
     },
     {
-      depends: [pgn, currentMoveIndex, totalMoves],
+      depends: [pgn, currentMoveIndex, totalMoves, previewGame],
       finally: () => {
-        if (boardCache[currentMoveIndex]) {
-          console.log("Cache hit");
-          let boardFromHistory = boardCache[currentMoveIndex];
-          setBoard(boardFromHistory);
-        } else {
-          console.log("Cache miss");
-          let boardFromHistory = navigateToMove(pgn, currentMoveIndex).board();
-          setBoardCache({
-            ...boardCache,
-            [currentMoveIndex]: boardFromHistory,
-          });
-          setBoard(boardFromHistory);
+        if (currentMoveIndex < game.history().length) {
+          setBoard(previewGame);
         }
       },
     }
