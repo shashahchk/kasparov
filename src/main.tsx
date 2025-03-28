@@ -156,7 +156,6 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     if (MOVE_TIME_DURATION_S - timeSinceLastMoved <= 0) {
       console.log("set bot thinking to true");
       setIsBotThinking(true);
-      // setIsBotThinking(true);
     }
 
     setTimeLeft(MOVE_TIME_DURATION_S - timeSinceLastMoved);
@@ -174,7 +173,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
       depends: { isBotThinking },
       finally: async () => {
         if (isBotThinking) {
-          refetchEverything();
+          await refetchEverything();
         }
       },
     }
