@@ -118,7 +118,9 @@ export const Chessboard = ({
       depends: [pgn, currentMoveIndex, totalMoves, previewGame],
       finally: () => {
         if (currentMoveIndex < game.history().length) {
-          setBoard(previewGame);
+          setBoard(
+            previewGame || navigateToMove(pgn, currentMoveIndex).board()
+          );
         }
       },
     }

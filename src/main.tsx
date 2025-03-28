@@ -169,6 +169,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
       setLastVotedMove(null);
       setShowVoteConfirmation(false);
       setMoveIndex(gameObject.history().length + 2);
+      setPreviewGame(null);
       setMove(null);
       setCurSelectedPos(null);
       setVotedFromSquare(null);
@@ -178,10 +179,12 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
   };
 
   if (moveIndex > historyLength) {
+    setPreviewGame(null);
     setMoveIndex(historyLength);
   }
 
   if (moveIndex < 1) {
+    setPreviewGame(null);
     setMoveIndex(1);
   }
 
