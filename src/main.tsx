@@ -165,6 +165,21 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     // }
   }, 1000);
 
+  useAsync(
+    async () => {
+      console.log("Use Async Running");
+      return {};
+    },
+    {
+      depends: { isBotThinking },
+      finally: async () => {
+        if (isBotThinking) {
+          refetchEverything();
+        }
+      },
+    }
+  );
+
   const refetchEverything = async () => {
     console.log("Refetching Everything");
     setVoteTable(await getMoveTable(redis, postId));
