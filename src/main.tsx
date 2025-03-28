@@ -134,7 +134,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
 
   // Calculate time since lastMoveTime
   let timer = useInterval(async () => {
-    if (isMoveInProgress) {
+    if (isBotThinking) {
       await refetchEverything();
       setIsBotThinking(false);
       return;
@@ -145,40 +145,14 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     const timeSinceLastMoved = Math.floor(
       (now.getTime() - lastMoveDate.getTime()) / 1000
     );
-    // console.log(lastMoveTime);
-    // console.log(lastMoveDate);
-    console.log("time since last mved", timeSinceLastMoved);
 
-    console.log(
-      "move time duration - time since last move: ",
-      MOVE_TIME_DURATION_S - timeSinceLastMoved
-    );
     if (MOVE_TIME_DURATION_S - timeSinceLastMoved <= 0) {
       console.log("set bot thinking to true");
       setIsBotThinking(true);
-      // setIsBotThinking(true);
     }
 
     setTimeLeft(MOVE_TIME_DURATION_S - timeSinceLastMoved);
-    // if (isBotThinking) {
-    //   await refetchEverything();
-    // }
   }, 1000);
-
-  useAsync(
-    async () => {
-      console.log("Use Async Running");
-      return {};
-    },
-    {
-      depends: { isBotThinking },
-      finally: async () => {
-        if (isBotThinking) {
-          refetchEverything();
-        }
-      },
-    }
-  );
 
   const refetchEverything = async () => {
     console.log("Refetching Everything");
