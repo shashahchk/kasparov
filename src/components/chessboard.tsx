@@ -1,6 +1,13 @@
 import { Devvit } from "@devvit/public-api";
-import { Chess, Piece as LibraryPiece } from "chess.js";
+import {
+  Chess,
+  Color,
+  Piece as LibraryPiece,
+  PieceSymbol,
+  Square,
+} from "chess.js";
 import { navigateToMove } from "../lib/game.js";
+import { useAsync, useState } from "@devvit/public-api";
 
 // Complete mapping of all chess pieces to image URLs
 const CHESS_PIECE_URLS = {
@@ -49,6 +56,8 @@ interface ChessboardProps {
   votedToSquare: string | null;
   isGameOver?: boolean;
   gameResult?: string;
+  setBoardCache: (boardCache: Record<number, Board>) => void;
+  boardCache: Record<number, Board>;
 }
 
 function convertIndicesToChessNotation([row, col]: Position): string {
@@ -61,7 +70,15 @@ export const stringifyPiece = (piece: LibraryPiece | null): Piece | null => {
   return result;
 };
 
+type Board = ({
+  square: Square;
+  type: PieceSymbol;
+  color: Color;
+} | null)[][];
+
 export const Chessboard = ({
+  boardCache,
+  setBoardCache,
   game,
   curSelectedPos,
   handleSelectPos,
@@ -78,200 +95,234 @@ export const Chessboard = ({
   const rows = 8;
   const cols = 8;
 
-  let board =
-    currentMoveIndex < totalMoves
-      ? navigateToMove(game.pgn(), currentMoveIndex).board()
-      : game.board();
+  let [pgnCache, setPgnCache] = useState<Record<number, string>>({
+    [totalMoves]: game.pgn(),
+  });
+
+  let pgnCacheResult = pgnCache[totalMoves];
+  let pgn = pgnCache[totalMoves] || game.pgn();
+  if (!pgnCacheResult) {
+    setPgnCache({ ...pgnCache, [totalMoves]: game.pgn() });
+  }
+
+  let [board, setBoard] = useState<Board>(game.board());
+
+  useAsync(
+    async () => {
+      console.log("Async running");
+      return {};
+    },
+    {
+      depends: [pgn, currentMoveIndex, totalMoves],
+      finally: () => {
+        if (boardCache[currentMoveIndex]) {
+          console.log("Cache hit");
+          let boardFromHistory = boardCache[currentMoveIndex];
+          setBoard(boardFromHistory);
+        } else {
+          console.log("Cache miss");
+          let boardFromHistory = navigateToMove(pgn, currentMoveIndex).board();
+          setBoardCache({
+            ...boardCache,
+            [currentMoveIndex]: boardFromHistory,
+          });
+          setBoard(boardFromHistory);
+        }
+      },
+    }
+  );
 
   return (
-    <vstack padding="medium" gap="medium" alignment="middle center">
-      {/* Game over notification */}
-      {isGameOver && gameResult && (
-        <vstack
-          padding="medium"
-          backgroundColor="rgba(0, 0, 0, 0.8)"
-          cornerRadius="medium"
-          border="medium"
-          borderColor={gameResult.includes("White") ? "#88CCFF" : "#FF9966"}
-          width="100%"
-          alignment="middle center"
-        >
-          <text
-            size="xlarge"
-            weight="bold"
-            color={gameResult.includes("White") ? "#88CCFF" : "#FF9966"}
+    board && (
+      <vstack padding="medium" gap="medium" alignment="middle center">
+        {/* Game over notification */}
+        {/* {isGameOver && gameResult && (
+          <vstack
+            padding="medium"
+            backgroundColor="rgba(0, 0, 0, 0.8)"
+            cornerRadius="medium"
+            border="medium"
+            borderColor={gameResult.includes("White") ? "#88CCFF" : "#FF9966"}
+            width="100%"
+            alignment="middle center"
           >
-            {gameResult}
-          </text>
-          <text color="white" size="small">
-            Game is complete
-          </text>
+            <text
+              size="xlarge"
+              weight="bold"
+              color={gameResult.includes("White") ? "#88CCFF" : "#FF9966"}
+            >
+              {gameResult}
+            </text>
+            <text color="white" size="small">
+              Game is complete
+            </text>
+          </vstack>
+        )} */}
+
+        <vstack
+          padding="xsmall"
+          gap="none"
+          alignment="middle center"
+          cornerRadius="small"
+          border="thin"
+          borderColor="#555555"
+        >
+          {Array(rows)
+            .fill(0)
+            .map((_, rowIndex) => (
+              <hstack key={`row-${rowIndex}`} gap="none">
+                {Array(cols)
+                  .fill(0)
+                  .map((_, colIndex) => {
+                    const isLight = (rowIndex + colIndex) % 2 === 0;
+                    const piece = board[rowIndex][colIndex];
+                    let pieceIndex = stringifyPiece(piece);
+                    let pieceIsWhite = piece ? piece.color === "w" : false;
+
+                    let squareInChessNotation = convertIndicesToChessNotation([
+                      rowIndex,
+                      colIndex,
+                    ]);
+
+                    // Check if this square is part of the voted move
+                    const isVotedFromSquare =
+                      votedFromSquare === squareInChessNotation;
+                    const isVotedToSquare =
+                      votedToSquare === squareInChessNotation;
+                    const isVotedSquare = isVotedFromSquare || isVotedToSquare;
+
+                    return (
+                      <vstack
+                        key={`cell-${rowIndex}-${colIndex}`}
+                        width="42px"
+                        height="42px"
+                        backgroundColor={
+                          isVotedSquare
+                            ? isLight
+                              ? "rgba(255, 153, 102, 0.5)"
+                              : "rgba(204, 102, 0, 0.5)"
+                            : isLight
+                            ? "#E8D5AC"
+                            : "#B58863"
+                        }
+                        alignment="center middle"
+                        onPress={
+                          !isGameOver &&
+                          (!curSelectedPos || piece?.color == "w") &&
+                          piece
+                            ? () => handleSelectPos(squareInChessNotation)
+                            : undefined
+                        }
+                      >
+                        {pieceIndex &&
+                          (curSelectedPos &&
+                          squareInChessNotation == curSelectedPos ? (
+                            <vstack
+                              width="100%"
+                              height="100%"
+                              backgroundColor="rgba(135, 206, 250, 0.4)"
+                              alignment="center middle"
+                            >
+                              <image
+                                url={CHESS_PIECE_URLS[pieceIndex]}
+                                imageWidth={32}
+                                imageHeight={32}
+                                resizeMode="fit"
+                                description={`${
+                                  pieceIsWhite ? "White" : "Black"
+                                } ${getPieceName(pieceIndex)}`}
+                              />
+                            </vstack>
+                          ) : (
+                            <vstack
+                              width="100%"
+                              height="100%"
+                              alignment="center middle"
+                              backgroundColor={
+                                isVotedSquare
+                                  ? isVotedFromSquare
+                                    ? "rgba(255, 153, 102, 0.3)"
+                                    : "rgba(255, 153, 102, 0.6)"
+                                  : "transparent"
+                              }
+                            >
+                              <image
+                                url={CHESS_PIECE_URLS[pieceIndex]}
+                                imageWidth={32}
+                                imageHeight={32}
+                                resizeMode="fit"
+                                description={`${
+                                  pieceIsWhite ? "White" : "Black"
+                                } ${getPieceName(pieceIndex)}`}
+                              />
+                            </vstack>
+                          ))}
+                        {curSelectedPos &&
+                          validMoves.filter(
+                            (validPos) => validPos == squareInChessNotation
+                          ).length > 0 && (
+                            <vstack
+                              width="60%"
+                              height="60%"
+                              cornerRadius="full"
+                              backgroundColor="rgba(76, 175, 80, 0.5)"
+                              alignment="center middle"
+                              onPress={() => handleMove(squareInChessNotation)}
+                            />
+                          )}
+                      </vstack>
+                    );
+                  })}
+              </hstack>
+            ))}
         </vstack>
-      )}
 
-      <vstack
-        padding="xsmall"
-        gap="none"
-        alignment="middle center"
-        cornerRadius="small"
-        border="thin"
-        borderColor="#555555"
-      >
-        {Array(rows)
-          .fill(0)
-          .map((_, rowIndex) => (
-            <hstack key={`row-${rowIndex}`} gap="none">
-              {Array(cols)
-                .fill(0)
-                .map((_, colIndex) => {
-                  const isLight = (rowIndex + colIndex) % 2 === 0;
-                  const piece = board[rowIndex][colIndex];
-                  let pieceIndex = stringifyPiece(piece);
-                  let pieceIsWhite = piece ? piece.color === "w" : false;
+        <hstack
+          gap="small"
+          alignment="center middle"
+          backgroundColor="#333334"
+          padding="small"
+          cornerRadius="medium"
+          border="thin"
+          borderColor="#444444"
+        >
+          <button
+            onPress={() => onNavigate(0)}
+            disabled={currentMoveIndex <= 0}
+            appearance="bordered"
+          >
+            {"<<"}
+          </button>
+          <button
+            onPress={() => onNavigate(currentMoveIndex - 1)}
+            disabled={currentMoveIndex <= 0}
+            appearance="bordered"
+          >
+            {"<"}
+          </button>
 
-                  let squareInChessNotation = convertIndicesToChessNotation([
-                    rowIndex,
-                    colIndex,
-                  ]);
+          <text
+            size="small"
+            color="white"
+          >{`Move ${currentMoveIndex} of ${totalMoves}`}</text>
 
-                  // Check if this square is part of the voted move
-                  const isVotedFromSquare =
-                    votedFromSquare === squareInChessNotation;
-                  const isVotedToSquare =
-                    votedToSquare === squareInChessNotation;
-                  const isVotedSquare = isVotedFromSquare || isVotedToSquare;
-
-                  return (
-                    <vstack
-                      key={`cell-${rowIndex}-${colIndex}`}
-                      width="42px"
-                      height="42px"
-                      backgroundColor={
-                        isVotedSquare
-                          ? isLight
-                            ? "rgba(255, 153, 102, 0.5)"
-                            : "rgba(204, 102, 0, 0.5)"
-                          : isLight
-                          ? "#E8D5AC"
-                          : "#B58863"
-                      }
-                      alignment="center middle"
-                      onPress={
-                        !isGameOver &&
-                        (!curSelectedPos || piece?.color == "w") &&
-                        piece
-                          ? () => handleSelectPos(squareInChessNotation)
-                          : undefined
-                      }
-                    >
-                      {pieceIndex &&
-                        (curSelectedPos &&
-                        squareInChessNotation == curSelectedPos ? (
-                          <vstack
-                            width="100%"
-                            height="100%"
-                            backgroundColor="rgba(135, 206, 250, 0.4)"
-                            alignment="center middle"
-                          >
-                            <image
-                              url={CHESS_PIECE_URLS[pieceIndex]}
-                              imageWidth={32}
-                              imageHeight={32}
-                              resizeMode="fit"
-                              description={`${
-                                pieceIsWhite ? "White" : "Black"
-                              } ${getPieceName(pieceIndex)}`}
-                            />
-                          </vstack>
-                        ) : (
-                          <vstack
-                            width="100%"
-                            height="100%"
-                            alignment="center middle"
-                            backgroundColor={
-                              isVotedSquare
-                                ? isVotedFromSquare
-                                  ? "rgba(255, 153, 102, 0.3)"
-                                  : "rgba(255, 153, 102, 0.6)"
-                                : "transparent"
-                            }
-                          >
-                            <image
-                              url={CHESS_PIECE_URLS[pieceIndex]}
-                              imageWidth={32}
-                              imageHeight={32}
-                              resizeMode="fit"
-                              description={`${
-                                pieceIsWhite ? "White" : "Black"
-                              } ${getPieceName(pieceIndex)}`}
-                            />
-                          </vstack>
-                        ))}
-                      {curSelectedPos &&
-                        validMoves.filter(
-                          (validPos) => validPos == squareInChessNotation
-                        ).length > 0 && (
-                          <vstack
-                            width="60%"
-                            height="60%"
-                            cornerRadius="full"
-                            backgroundColor="rgba(76, 175, 80, 0.5)"
-                            alignment="center middle"
-                            onPress={() => handleMove(squareInChessNotation)}
-                          />
-                        )}
-                    </vstack>
-                  );
-                })}
-            </hstack>
-          ))}
+          <button
+            onPress={() => onNavigate(currentMoveIndex + 1)}
+            disabled={currentMoveIndex >= totalMoves}
+            appearance="bordered"
+          >
+            {">"}
+          </button>
+          <button
+            onPress={() => onNavigate(totalMoves)}
+            disabled={currentMoveIndex >= totalMoves}
+            appearance="bordered"
+          >
+            {">>"}
+          </button>
+        </hstack>
       </vstack>
-
-      <hstack
-        gap="small"
-        alignment="center middle"
-        backgroundColor="#333334"
-        padding="small"
-        cornerRadius="medium"
-        border="thin"
-        borderColor="#444444"
-      >
-        <button
-          onPress={() => onNavigate(0)}
-          disabled={currentMoveIndex <= 0}
-          appearance="bordered"
-        >
-          {"<<"}
-        </button>
-        <button
-          onPress={() => onNavigate(currentMoveIndex - 1)}
-          disabled={currentMoveIndex <= 0}
-          appearance="bordered"
-        >
-          {"<"}
-        </button>
-
-        <text
-          size="small"
-          color="white"
-        >{`Move ${currentMoveIndex} of ${totalMoves}`}</text>
-
-        <button
-          onPress={() => onNavigate(currentMoveIndex + 1)}
-          disabled={currentMoveIndex >= totalMoves}
-          appearance="bordered"
-        >
-          {">"}
-        </button>
-        <button
-          onPress={() => onNavigate(totalMoves)}
-          disabled={currentMoveIndex >= totalMoves}
-          appearance="bordered"
-        >
-          {">>"}
-        </button>
-      </hstack>
-    </vstack>
+    )
   );
 };
 

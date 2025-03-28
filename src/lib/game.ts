@@ -37,10 +37,15 @@ export function getHistory(game: Chess): Move[] {
 }
 
 export function navigateToMove(pgn: PGN, moveIndex: number): Chess {
+  console.log("Navigate to move being called");
   const game = new Chess();
   game.loadPgn(pgn);
 
   if (moveIndex < 0) {
+    return game;
+  }
+
+  if (moveIndex >= game.history().length) {
     return game;
   }
 
