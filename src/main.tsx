@@ -175,6 +175,14 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
     }
   };
 
+  if (moveIndex > historyLength) {
+    setMoveIndex(historyLength);
+  }
+
+  if (moveIndex < 1) {
+    setMoveIndex(1);
+  }
+
   timer.start();
 
   const handleMove = async (newPos: string | null) => {
@@ -514,7 +522,7 @@ const App: Devvit.CustomPostComponent = ({ redis, reddit, postId }) => {
             handleMove={handleMove}
             validMoves={validMoves}
             currentMoveIndex={moveIndex}
-            totalMoves={gameObject.history().length}
+            totalMoves={historyLength}
             onNavigate={setMoveIndex}
             votedFromSquare={votedFromSquare}
             votedToSquare={votedToSquare}
@@ -551,7 +559,7 @@ function getBoardAfterEngineTurn(chess: Chess): Chess {
   }
 
   let fen = chess.fen();
-  let BOT_LEVEL = 4;
+  let BOT_LEVEL = 3;
   let botMove = aiMove(fen, BOT_LEVEL);
 
   let from = Object.keys(botMove)[0];
